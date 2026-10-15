@@ -285,14 +285,18 @@
   // внутри Cloudflare передаёт запрос в API (website/pay-proxy). Второй -
   // сам API напрямую, если посредник недоступен. Нейтральный домен API сюда
   // не вписывать никогда: код страницы видит любой.
+  // Посредник - дважды: у Cloudflare Pages изредка бывает ответ 52x (до
+  // функции запрос не дошёл), со второй попытки обычно проходит.
   var HOSTS = [
+    'https://rubin-pay.pages.dev/api/pay/',
     'https://rubin-pay.pages.dev/api/pay/',
     'https://api.rubinvpn.com/v1/pay/rolly/'
   ];
 
-  // kind - 'create' или 'status'. Следующий адрес пробуем, только если с
-  // этим не удалось даже соединиться (ответа нет). Ответ с ошибкой - это
-  // ответ, его и показываем.
+  // kind - 'create' или 'status'. Следующий адрес пробуем, только если
+  // нашего ответа нет: не удалось соединиться или Cloudflare сам ответил
+  // 52x (запрос до сервера не дошёл, платёж не создан). Ответ сервера с
+  // ошибкой - это ответ, его и показываем.
   function post(kind, body) {
     function attempt(i) {
       var ctl = window.AbortController ? new AbortController() : null;
@@ -301,7 +305,12 @@
       return fetch(HOSTS[i] + kind, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined
-      }).then(function (r) { answered = true; clearTimeout(timer); return r.json(); })
+      }).then(function (r) {
+        clearTimeout(timer);
+        if (r.status >= 520 && r.status <= 530) throw new Error('edge_' + r.status);
+        answered = true;
+        return r.json();
+      })
         .catch(function (e) {
           clearTimeout(timer);
           if (!answered && i + 1 < HOSTS.length) return attempt(i + 1);
