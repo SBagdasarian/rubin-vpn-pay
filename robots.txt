@@ -1,0 +1,3 @@
+User-agent: *
+Disallow: /rubin-vpn-pay/pay/
+Disallow: /rubin-vpn-pay/done/
