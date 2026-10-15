@@ -7,6 +7,15 @@
 <meta name="description" content="Условия использования Rubin VPN и оплаты на сайте.">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0e0b0c">
+<script>
+  // Только https: сервер принимает форму оплаты лишь с https://get.rubinvpn.com
+  // (PAY_ORIGINS). Открытая по http страница получила бы отказ, похожий на
+  // «Нет связи». GitHub Pages перенаправляет сам, когда включён «Enforce
+  // HTTPS», - это подстраховка на время до включения и на случай ошибки.
+  if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    location.replace('https:' + location.href.slice(5));
+  }
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>

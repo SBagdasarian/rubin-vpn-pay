@@ -8,6 +8,15 @@
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0e0b0c">
+<script>
+  // Только https: сервер принимает форму оплаты лишь с https://get.rubinvpn.com
+  // (PAY_ORIGINS). Открытая по http страница получила бы отказ, похожий на
+  // «Нет связи». GitHub Pages перенаправляет сам, когда включён «Enforce
+  // HTTPS», - это подстраховка на время до включения и на случай ошибки.
+  if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    location.replace('https:' + location.href.slice(5));
+  }
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>
@@ -202,35 +211,41 @@
 .rvp .foot .legal { margin-top:32px; padding-top:20px; border-top:1px solid var(--border); color:var(--text-3); font-size:13px; }
 </style>
 <script>
-/* Rubin VPN на Tilda: форма оплаты и страница «Спасибо».
-   Встраивается генератором build_blocks.py в коды страниц pay.html и
-   done.html. Отличие от website/src/static/pay.js: Tilda - чужой сайт,
-   поэтому запросы идут прямо в API (разрешено CORS для PAY_ORIGINS), а не
-   через /api/pay/* того же сайта. */
+/* Rubin VPN, сайт оплаты get.rubinvpn.com (GitHub Pages; раньше Tilda):
+   форма оплаты и страница «Спасибо». Встраивается генератором
+   build_blocks.py в страницы pay и done. Сайт статический, поэтому запросы
+   идут в API с чужого адреса (разрешено CORS для PAY_ORIGINS). */
 (function () {
-  // Адрес API. Маленькие ответы через замедление Cloudflare в России
-  // проходят. Нейтральный домен API сюда не вписывать никогда: код
-  // страницы видит любой.
-  var API = 'https://api.rubinvpn.com';
+  // Куда ходит форма, по порядку. Первый - посредник на Cloudflare Pages с
+  // именем без «vpn»: российские операторы на мобильном интернете обрывают
+  // соединения с именами, где есть «vpn» (RU-NETWORK.md, К2), а посредник
+  // внутри Cloudflare передаёт запрос в API (website/pay-proxy). Второй -
+  // сам API напрямую, если посредник недоступен. Нейтральный домен API сюда
+  // не вписывать никогда: код страницы видит любой.
+  var HOSTS = [
+    'https://rubin-pay.pages.dev/api/pay/',
+    'https://api.rubinvpn.com/v1/pay/rolly/'
+  ];
 
-  function post(path, body, tries) {
-    var ctl = window.AbortController ? new AbortController() : null;
-    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 25000) : null;
-    var answered = false;
-    return fetch(API + path, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined
-    }).then(function (r) { answered = true; clearTimeout(timer); return r.json(); })
-      .catch(function (e) {
-        clearTimeout(timer);
-        // Повтор - только если запрос не ушёл вовсе: повтор после ответа
-        // мог бы создать второй платёж.
-        var timedOut = e && e.name === 'AbortError';
-        if (!answered && !timedOut && tries > 1) {
-          return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return post(path, body, tries - 1); });
-        }
-        throw e;
-      });
+  // kind - 'create' или 'status'. Следующий адрес пробуем, только если с
+  // этим не удалось даже соединиться (ответа нет). Ответ с ошибкой - это
+  // ответ, его и показываем.
+  function post(kind, body) {
+    function attempt(i) {
+      var ctl = window.AbortController ? new AbortController() : null;
+      var timer = ctl ? setTimeout(function () { ctl.abort(); }, 12000) : null;
+      var answered = false;
+      return fetch(HOSTS[i] + kind, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined
+      }).then(function (r) { answered = true; clearTimeout(timer); return r.json(); })
+        .catch(function (e) {
+          clearTimeout(timer);
+          if (!answered && i + 1 < HOSTS.length) return attempt(i + 1);
+          throw e;
+        });
+    }
+    return attempt(0);
   }
 
   // 1. Форма оплаты: номер аккаунта и срок -> платёж RollyPay -> переход
@@ -256,7 +271,7 @@
       var plan = (form.querySelector('input[name=plan]:checked') || {}).value || 'month';
       if (number.length !== 16) { show('bad_number'); return; }
       btn.disabled = true;
-      post('/v1/pay/rolly/create', { number: number, plan: plan, lang: 'ru' }, 2).then(function (d) {
+      post('create', { number: number, plan: plan, lang: 'ru' }).then(function (d) {
         if (d && d.ok && typeof d.paymentUrl === 'string' && d.paymentUrl.indexOf('https://') === 0) {
           window.location.href = d.paymentUrl;
           return;
@@ -290,7 +305,7 @@
     var tries = 0, fails = 0;
     var ask = function () {
       tries++;
-      post('/v1/pay/rolly/status', { order: order }, 1).then(function (d) {
+      post('status', { order: order }).then(function (d) {
         if (d && d.ok === false) {
           if (d.error === 'too_many_requests' && tries < 5) { msg('checking'); setTimeout(ask, 20000); return; }
           msg(d.error === 'bad_order' ? 'unknown' : 'offline'); help.hidden = false; return;
