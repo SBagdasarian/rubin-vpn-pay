@@ -9,13 +9,17 @@
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0e0b0c">
 <script>
-  // Только https: сервер принимает форму оплаты лишь с https://get.rubinvpn.com
-  // (PAY_ORIGINS). Открытая по http страница получила бы отказ, похожий на
-  // «Нет связи». GitHub Pages перенаправляет сам, когда включён «Enforce
-  // HTTPS», - это подстраховка на время до включения и на случай ошибки.
-  if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
-    location.replace('https:' + location.href.slice(5));
-  }
+  // Главный адрес сайта оплаты - https://pay.rubinvpn.com (PAY_ORIGINS на
+  // сервере). Открытую по http или по старому адресу get.rubinvpn.com
+  // страницу сразу переводим туда: по http сервер форму не принимает, а у
+  // get.rubinvpn.com с 15.10.2026 завис сертификат GitHub Pages.
+  (function () {
+    var h = location.hostname;
+    if (/^(localhost|127\.0\.0\.1)$/.test(h) || /\.github\.io$/.test(h)) return;
+    if (location.protocol === 'http:' || h === 'get.rubinvpn.com') {
+      location.replace('https://pay.rubinvpn.com' + location.pathname + location.search + location.hash);
+    }
+  })();
 </script>
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
